@@ -5,7 +5,12 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/spf13/cobra"
@@ -38,19 +43,42 @@ to quickly create a Cobra application.`,
 			log.Println("Failed to create producer", err)
 			return
 		}
-
-		if _, err = producer.Send(context.Background(), &pulsar.ProducerMessage{
-			Payload: []byte("hello"),
-		}); err != nil {
-			log.Println("Failed to send message", err)
-			return
-		}
 		defer producer.Close()
 
-		if err != nil {
-			log.Println("Failed to publish message", err)
-		} else {
-			log.Println("Published message")
+		// Create a ticker that ticks every 1 second
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		// Create a context with cancellation
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Set up signal handling for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+		// Counter for messages
+		messageCount := 0
+	ProcessLoop:
+		for {
+			select {
+			case <-ticker.C:
+				messageCount++
+				key := fmt.Sprintf("%d", messageCount%3)
+				payload := fmt.Sprintf("hello %d", messageCount%3)
+				if _, err = producer.Send(ctx, &pulsar.ProducerMessage{
+					Key:     key,
+					Payload: []byte(payload),
+				}); err != nil {
+					log.Println("Failed to send message", err)
+					return
+				}
+				log.Printf("produce message key:%s value:%s\n", key, payload)
+
+			case <-sigChan:
+				log.Println("Shutting down producer...")
+				break ProcessLoop
+			}
 		}
 	},
 }

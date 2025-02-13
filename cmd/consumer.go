@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/spf13/cobra"
@@ -33,25 +36,47 @@ to quickly create a Cobra application.`,
 
 		defer client.Close()
 
+		// Create a context with cancellation
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Set up signal handling for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 		consumer, err := client.Subscribe(pulsar.ConsumerOptions{
 			Topic:            "investments/stocks/stock-ticker",
 			SubscriptionName: "my-sub",
-			Type:             pulsar.Shared,
+			Type:             pulsar.KeyShared,
 		})
 		if err != nil {
 			log.Printf("Failed to create consumer\n:%s", err)
 			return
 		}
-
 		defer consumer.Close()
 
-		msg, err := consumer.Receive(context.Background())
-		if err != nil {
-			log.Fatal(err)
-		}
+		// Start continuous message consumption
+	ProcessLoop:
+		for {
+			select {
+			case <-sigChan:
+				log.Println("Shutting down consumer...")
+				break ProcessLoop
+			default:
+				msg, err := consumer.Receive(ctx)
+				if err != nil {
+					log.Printf("Error receiving message: %v", err)
+					continue
+				}
 
-		fmt.Printf("Received message msgId: %#v -- content: '%s'\n",
-			msg.ID(), string(msg.Payload()))
+				// Process the message
+				fmt.Printf("Received message msgId: %#v -- content: '%s'\n",
+					msg.ID(), string(msg.Payload()))
+
+				// Acknowledge the message
+				consumer.Ack(msg)
+			}
+		}
 	},
 }
 

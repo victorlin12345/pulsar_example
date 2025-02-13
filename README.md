@@ -22,8 +22,11 @@ bin/pulsar-admin namespaces create investments/stocks
 ```
 ### create topic
 ```
-bin/pulsar-admin topics create persistent://investments/stocks/stock-ticker
+bin/pulsar-admin topics create-partitioned-topic \
+persistent://investments/stocks/stock-ticker \
+--partitions 6
 ```
+
 ### run up consumer
 ```
 go run main.go consumer
@@ -31,6 +34,11 @@ go run main.go consumer
 ### run up producer
 ```
 go run main.go producer
+```
+
+### pulsar viewer
+```
+https://docs.streamvisor.com/installation/getting-started/docker/
 ```
 
 ## TBD
